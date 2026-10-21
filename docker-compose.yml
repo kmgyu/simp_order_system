@@ -1,0 +1,86 @@
+services:
+  # ------------------------------------------------------------
+  # 1. MySQL 데이터베이스
+  # ------------------------------------------------------------
+  mysql:
+    image: mysql:8.0
+    container_name: capybara-mysql
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: capybara_order
+      MYSQL_USER: order_user
+      MYSQL_PASSWORD: order_password
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./scripts/mysql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -prootpassword || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - capybara-network
+
+  # ------------------------------------------------------------
+  # 2. Flask 백엔드 API 서버 (포트 3000)
+  # ------------------------------------------------------------
+  backend:
+    build:
+      context: ./capybara_qr_order
+      dockerfile: Dockerfile
+    container_name: capybara-backend
+    restart: unless-stopped
+    environment:
+      FLASK_ENV: development
+      SECRET_KEY: dev-insecure-secret-key-change-in-production
+      DB_HOST: mysql
+      DB_PORT: "3307"
+      DB_USER: order_user
+      DB_PASS: order_password
+      DB_NAME: capybara_order
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./capybara_qr_order:/app
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - capybara-network
+
+  # ------------------------------------------------------------
+  # 3. Vue 3 프론트엔드 개발 서버 (포트 8080)
+  # ------------------------------------------------------------
+  frontend:
+    build:
+      context: ./mnu_pub_order_system
+      dockerfile: Dockerfile
+    container_name: capybara-frontend
+    restart: unless-stopped
+    environment:
+      VUE_APP_API_BASE_URL: http://localhost:3000
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./mnu_pub_order_system:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - capybara-network
+
+volumes:
+  mysql_data:
+    driver: local
+
+networks:
+  capybara-network:
+    driver: bridge
